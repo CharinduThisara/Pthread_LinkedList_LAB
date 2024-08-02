@@ -14,17 +14,24 @@ pthread_mutex_t mutex;
 pthread_rwlock_t rwlock;
 
 int n = 10000, m = 100000;
-float mMember = 0.99, mInsert = 0.005, mDelete = 0.005;
+float mMember = 0.5, mInsert = 0.25, mDelete = 0.25;
 int thread_count;
 
 void PrintList(struct list_node_s *head_p) {
     struct list_node_s *curr_p = head_p;
+    struct list_node_s *prev_p = NULL;
+    
     while (curr_p != NULL) {
-        printf("%d -> ", curr_p->data);
+        if (prev_p != NULL) {
+            printf("(%d)(%p) [diff: %ld] -> ", curr_p->data, (void *)curr_p, (char *)curr_p - (char *)prev_p);
+        } else {
+            printf("(%d)(%p) -> ", curr_p->data, (void *)curr_p);
+        }
+        prev_p = curr_p;
         curr_p = curr_p->next;
     }
     printf("NULL\n");
-} /* PrintList */
+}
 
 void populate_list(int n, struct list_node_s **head) {
     int value;
@@ -35,18 +42,47 @@ void populate_list(int n, struct list_node_s **head) {
     }
 } /* populate_list */
 
+void *serial_thread_func(void *args) {
+    struct list_node_s *head = (struct list_node_s *)args;
+    int value;
+
+    int local_member = m* mMember;
+    int local_insert = m* mInsert;
+    int local_delete = m* mDelete;
+
+    printf("    => local_member: %d, local_insert: %d, local_delete: %d\n", local_member, local_insert, local_delete);
+
+    while (local_member > 0 || local_insert > 0 || local_delete > 0) {
+        float op = rand() % 3;
+        value = rand() % MAX_VALUE;
+      
+        if (op == MEMBER && local_member > 0) {
+            Member(value, head);
+            local_member--;
+        } else if (op == INSERT && local_insert > 0) {
+            Insert(value, &head);
+            local_insert--;
+        } else if (op == DELETE && local_delete > 0) {
+            Delete(value, &head);
+            local_delete--;
+        }
+    }
+
+    return NULL;
+}
+
 void *mutex_thread_func(void *args) {
     struct list_node_s *head = (struct list_node_s *)args;
 	
 	
 	int ops_per_thread = m/thread_count;
 
-    printf("       ops_per_thread: %d\n", ops_per_thread);
-
 	int local_member = ops_per_thread* mMember;
 	int local_insert = ops_per_thread* mInsert;
 	int local_delete = ops_per_thread* mDelete;
     int value;
+
+    printf("    => local_member: %d, local_insert: %d, local_delete: %d\n", local_member, local_insert, local_delete);
 
 	while (local_member > 0 || local_insert > 0 || local_delete > 0) {
 		float op = rand() % 3;
@@ -79,12 +115,12 @@ void *rwlock_thread_func(void *args) {
 	
 	int ops_per_thread = m/thread_count;
 
-    printf("       ops_per_thread: %d\n", ops_per_thread);
-
 	int local_member = ops_per_thread* mMember;
 	int local_insert = ops_per_thread* mInsert;
 	int local_delete = ops_per_thread* mDelete;
     int value;
+
+    printf("    => local_member: %d, local_insert: %d, local_delete: %d\n", local_member, local_insert, local_delete);
 
 	while (local_member > 0 || local_insert > 0 || local_delete > 0) {
 		float op = rand() % 3;
@@ -112,32 +148,14 @@ void *rwlock_thread_func(void *args) {
 }
 
 void perform_operations_serial(struct list_node_s *head) { 
-
-    int value;
-
-    int local_member = m* mMember;
-	int local_insert = m* mInsert;
-	int local_delete = m* mDelete;
-
+    pthread_t thread_handle = (pthread_t)malloc(sizeof(pthread_t));
     struct timespec start, end;
+
     clock_gettime(CLOCK_MONOTONIC, &start);
-
-    for (int i = 0; i < local_member; i++) {
-		value = rand() % MAX_VALUE;
-		Member(value, head);
-    }
-
-    for (int i = 0; i < local_insert; i++) {
-        value = rand() % MAX_VALUE;
-        Insert(value, &head);
-    }
-
-    for (int i = 0; i < local_delete; i++) {
-        value = rand() % MAX_VALUE;
-        Delete(value, &head);
-    }
-
+    pthread_create(&thread_handle, NULL, serial_thread_func, (void*) head);
+    pthread_join(thread_handle, NULL);
     clock_gettime(CLOCK_MONOTONIC, &end);
+
     double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
     printf("    Elapsed time with serial: %.10f seconds\n", elapsed);
@@ -218,6 +236,7 @@ int main(int argc, char *argv[]) {
     printf("List populated\n");
     printf("\n--------------------------------------------------------------------\n");
 
+    struct list_node_s *list_serial = CopyList(head);
     struct list_node_s *list_mutex = CopyList(head);
     struct list_node_s *list_rwlock = CopyList(head);
 
@@ -227,7 +246,7 @@ int main(int argc, char *argv[]) {
     printf("\n=====================================================================\n");
     printf("|                   Performing serial operations                    |\n");
     printf("=====================================================================\n");
-    perform_operations_serial(head);
+    perform_operations_serial(list_serial);
     printf("=====================================================================\n\n");
 
     printf("\n=====================================================================\n");
