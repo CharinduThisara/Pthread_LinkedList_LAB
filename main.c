@@ -4,19 +4,18 @@
 #include <time.h>
 #include "linked_list.h"
 
+#define INSERT 0
+#define DELETE 1
+#define MEMBER 2
+
 #define MAX_VALUE 65535 // 2^16 - 1
 
 pthread_mutex_t mutex;
 pthread_rwlock_t rwlock;
-pthread_mutex_t count_mutex;
 
-int n = 1000, m = 10000;
-float mMember = 0.50, mInsert = 0.25, mDelete = 0.25;
+int n = 10000, m = 100000;
+float mMember = 0.99, mInsert = 0.005, mDelete = 0.005;
 int thread_count;
-
-int global_member = 0;
-int global_insert = 0;
-int global_delete = 0;
 
 void PrintList(struct list_node_s *head_p) {
     struct list_node_s *curr_p = head_p;
@@ -58,43 +57,35 @@ void generate_n_m_and_proportions() {
 void *mutex_thread_func(void *args) {
     struct list_node_s *head = (struct list_node_s *)args;
 	
-	int local_member=0;
-	int local_insert=0;
-	int local_delete=0;
-    int value;
 	
 	int ops_per_thread = m/thread_count;
 
+	int local_member = ops_per_thread* mMember;
+	int local_insert = ops_per_thread* mInsert;
+	int local_delete = ops_per_thread* mDelete;
+    int value;
+
 	for (int i = 0; i < ops_per_thread; i++) {
-		float op = (rand() % 10000/10000.0);
+		float op = rand() % 3;
 		value = rand() % MAX_VALUE;
 	  
-		if (op < mMember) {
+		if (op == MEMBER && local_member > 0) {
 			pthread_mutex_lock(&mutex);
 			Member(value, head);
 			pthread_mutex_unlock(&mutex);
-			local_member++;
-		} else if (op < mMember + mInsert) {
+			local_member--;
+		} else if (op == INSERT && local_insert > 0) {
 			pthread_mutex_lock(&mutex);
             Insert(value, &head);
 			pthread_mutex_unlock(&mutex);
-			local_insert++;
-		} else {
+			local_insert--;
+		} else if (op == DELETE && local_delete > 0) {
 			pthread_mutex_lock(&mutex);
 			Delete(value, &head);
 			pthread_mutex_unlock(&mutex);
-			local_delete++;
+			local_delete--;
 		}
 	}
-
-    // Update global counters with local counters
-    pthread_mutex_lock(&count_mutex);
-
-    global_member += local_member;
-    global_insert += local_insert;
-    global_delete += local_delete;
-
-    pthread_mutex_unlock(&count_mutex);  
 
     return NULL;
 }
@@ -102,43 +93,34 @@ void *mutex_thread_func(void *args) {
 void *rwlock_thread_func(void *args) {
     struct list_node_s *head = (struct list_node_s *)args;
 	
-	int local_member=0;
-	int local_insert=0;
-	int local_delete=0;
-    int value;
 	
 	int ops_per_thread = m/thread_count;
+	int local_member = ops_per_thread* mMember;
+	int local_insert = ops_per_thread* mInsert;
+	int local_delete = ops_per_thread* mDelete;
+    int value;
 
 	for (int i = 0; i < ops_per_thread; i++) {
-		float op = (rand() % 10000/10000.0);
+		float op = rand() % 3;
 		value = rand() % MAX_VALUE;
 	  
-		if (op < mMember) {
+		if (op == MEMBER && local_member > 0) {
 			pthread_rwlock_rdlock(&rwlock);
 			Member(value, head);
 			pthread_rwlock_unlock(&rwlock);
-			local_member++;
-		} else if (op < mMember + mInsert) {
+			local_member--;
+		} else if (op == INSERT && local_insert > 0) {
 			pthread_rwlock_wrlock(&rwlock);
             Insert(value, &head);
 			pthread_rwlock_unlock(&rwlock);
-			local_insert++;
-		} else {
+			local_insert--;
+		} else if (op == DELETE && local_delete > 0) {
 			pthread_rwlock_wrlock(&rwlock);
 			Delete(value, &head);
 			pthread_rwlock_unlock(&rwlock);
-			local_delete++;
+			local_delete--;
 		}
 	}
-
-    // Update global counters with local counters
-    pthread_mutex_lock(&count_mutex);
-
-    global_member += local_member;
-    global_insert += local_insert;
-    global_delete += local_delete;
-
-    pthread_mutex_unlock(&count_mutex); 
 
     return NULL;
 }
@@ -146,65 +128,49 @@ void *rwlock_thread_func(void *args) {
 void perform_operations_serial(struct list_node_s *head) { 
 
     int value;
-    double start = clock();
-    int tot_member=0;
-    int tot_insert=0;
-    int tot_delete=0;
+
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
     for (int i = 0; i < m; i++) {
-		float op = (rand() % 10000/10000.0);
+		float op = rand() % 3;
 		value = rand() % MAX_VALUE;
 	  
-		if (op < mMember) {
+		if (op == MEMBER) {
 			Member(value, head);
-            tot_member++;
-		} else if (op < mMember + mInsert) {
+		} else if (op == INSERT) {
             Insert(value, &head);
-            tot_insert++;
 		} else {
 			Delete(value, &head);
-            tot_delete++;
 		}
 	}
-
-    double end = clock();
-
-    double total_operations = tot_delete + tot_insert + tot_member;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
     printf("    => Each operation as a percentage of Total operations\n"); 
-
-    printf("       - Member: %.3f\n", tot_member / total_operations);
-    printf("       - Insert: %.3f\n", tot_insert / total_operations);
-    printf("       - Delete: %.3f\n", tot_delete / total_operations);
-
-    printf("    Elapsed time with serial: %.10f seconds\n", (end - start) / CLOCKS_PER_SEC);
+    printf("    Elapsed time with serial: %.10f seconds\n", elapsed);
 } /* perform_operations serial */
 
 void perform_operations_mutex(struct list_node_s *head) {
 
     pthread_t *thread_handles = malloc(thread_count*sizeof(pthread_t));
 
-    global_member = 0;
-    global_insert = 0;
-    global_delete = 0;
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
-    double start = clock();
     for (int i = 0; i < thread_count; i++)
 		pthread_create(&thread_handles[i], NULL, mutex_thread_func, (void*) head);
 
     for (int i = 0; i < thread_count; i++)
         pthread_join(thread_handles[i], NULL);
 
-    double end = clock();
-
-    double total_operations = global_delete + global_insert + global_member;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
     printf("    => Each operation as a percentage of Total operations\n"); 
-
-    printf("       - Member: %.3f\n", global_member / total_operations);
-    printf("       - Insert: %.3f\n", global_insert / total_operations);
-    printf("       - Delete: %.3f\n", global_delete / total_operations);
-    printf("    Elapsed time with mutex: %.10f seconds\n", (end - start) / CLOCKS_PER_SEC);
+    printf("    Elapsed time with mutex: %.10f seconds\n", elapsed);
+    
+    free(thread_handles);
     
 } /* perform_operations_mutex */
 
@@ -212,27 +178,22 @@ void perform_operations_rwlock(struct list_node_s *head) {
 
     pthread_t *thread_handles = malloc(thread_count*sizeof(pthread_t));
 
-    global_member = 0;
-    global_insert = 0;
-    global_delete = 0;
+    struct timespec start, end;
+    clock_gettime(CLOCK_MONOTONIC, &start);
 
-    double start = clock();
     for (int i = 0; i < thread_count; i++)
 		pthread_create(&thread_handles[i], NULL, rwlock_thread_func, (void*) head);
 
     for (int i = 0; i < thread_count; i++)
         pthread_join(thread_handles[i], NULL);
 
-    double end = clock();
-
-    double total_operations = global_delete + global_insert + global_member;
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
 
     printf("    => Each operation as a percentage of Total operations\n"); 
-
-    printf("      - Member: %.3f\n", global_member / total_operations);
-    printf("      - Insert: %.3f\n", global_insert / total_operations);
-    printf("      - Delete: %.3f\n", global_delete / total_operations);
-    printf("    Elapsed time with mutex: %.10f seconds\n", (end - start) / CLOCKS_PER_SEC);
+    printf("    Elapsed time with rwlock: %.10f seconds\n", elapsed);
+  
+    free(thread_handles);
   
 } /* perform_operations_rwlock */
 
