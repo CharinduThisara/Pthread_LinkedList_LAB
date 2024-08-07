@@ -25,43 +25,52 @@ make
 ```
 
 ## Usage
-### 1. run the program with a specific number of threads 
+
+
+### 1. Run the Program
+
+#### Run the program with a specific number of threads, and set the proportions of Member and Insert operations:
+
 
 ```sh
 ./concurrent_list_ops <number_of_threads> <nMember> <nInsert>
 ```
 
-For example:
+Example:
 ```sh
 ./concurrent_list_ops 4 0.99 0.005
 ```
-If you have make installed, then:
+--- ---
+#### If you have make installed, you can also use:
 ```sh
 make run threads=<number_of_threads> mMember=<nMember> nInsert=<nInsert>
 ```
-For example:
+
+Example:
 ```sh
 make run threads=4 mMember=0.99 mInsert=0.005
 ```
 
-### 2. Generate a csv file of execution times for thread counts 1,2,4 & 8 with a specified sample size
+### 2. Generate a CSV File of Execution Times
+Generate a CSV file of execution times for thread counts 1, 2, 4, and 8 with a specified sample size:
+
 ```sh
-./concurrent_list_ops -gen-csv <number of samples> <nMember> <nInsert>
+./concurrent_list_ops -gen-csv <number_of_samples> <nMember> <nInsert>
 ```
 
-For example:
-```
+Example:
+```sh
 ./concurrent_list_ops -gen-csv 10 0.99 0.005
 ```
-If you have make installed, then:
-
+--- ---
+If you have make installed, you can also use:
 ```sh
 make gen-csv samples=<number_of_samples> mMember=<nMember> nInsert=<nInsert>
 ```
-For example:
+
+Example:
 ```sh
 make gen-csv samples=10 mMember=0.99 mInsert=0.005
-
 ```
 
 ## Program Details
@@ -160,3 +169,4 @@ Data written to output.csv
 - Random number generation and normalization techniques.
 
 Feel free to contribute or raise issues for improvements. Enjoy experimenting with concurrent programming!
+
